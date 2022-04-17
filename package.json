@@ -1,0 +1,12 @@
+{
+    "name": "make-import-map",
+    "version": "1.0.0",
+    "description": "Generate and serve import maps",
+    "main": "index.js",
+    "license": "MIT",
+    "bin": "./cli.js",
+    "dependencies": {
+        "fs-serve": "^1.0.0"
+    },
+    "type": "module"
+}
