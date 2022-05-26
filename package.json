@@ -5,7 +5,7 @@
     "main": "index.js",
     "license": "MIT",
     "bin": "./cli.js",
-    "dependencies": {
+    "devDependencies": {
         "fs-serve": "^1.0.0"
     },
     "type": "module"
