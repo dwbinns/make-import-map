@@ -1,24 +1,16 @@
 #!/usr/bin/env node
 
-import Server from "fs-serve";
 import { writeFile } from "fs/promises";
 import { createServer } from "http";
 import createImportMap from "./index.js";
+import ImportServer from "./Server.js";
 
 const [command, root, target] = process.argv.slice(2);
 
+
 if (command == "serve") {
-    const server = new Server(root, {
-        ssi: [
-            {
-                extension: "html",
-                handlers: [async ({ filename }) => await createImportMap(filename, path => path)],
-            }
-        ],
-        maxAge: 2,
-    });
 
-
+    const server = new ImportServer(root);
     createServer((request, response) => {
         server.serve(request, response);
     }).listen(4000);

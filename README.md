@@ -9,9 +9,7 @@ See [https://github.com/WICG/import-maps]
 Create an HTML file including:
 
 ```html
-<script type="importmap">
   <!--#importmap-->
-</script>
 ```
 
 Run a development server (either by installing this package globally or create an npm script).

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
-import { readFile, lstat } from "fs/promises";
-import { createRequire } from "module";
-import { relative, dirname, resolve, join, sep } from "path";
-import { pathToFileURL } from "url";
+import { lstat, readFile } from "fs/promises";
+import { dirname, join } from "path";
 
 async function findPackage(path) {
     const packageJSONPath = join(path, "package.json");
@@ -20,11 +18,6 @@ async function loadPackageJSON(modulePath) {
     return JSON.parse(await readFile(join(modulePath, "package.json")));
 }
 
-
-function relativeURL(basePath, targetPath) {
-    return relative(basePath, targetPath).split(sep).join("/");
-}
-
 async function findModulePath(path, moduleName) {
     let found = join(path, "node_modules", moduleName);
     if (await lstat(found).catch(e => false)) {
@@ -34,34 +27,63 @@ async function findModulePath(path, moduleName) {
     throw new Error(`Unable to find module: ${moduleName}`);
 }
 
+
+
+function urlPathJoin(...args) {
+    let result = args
+        .map(arg => arg.split("/")/*.filter(component => component && component != '.')*/)
+        .reduce(
+            (base, extra) => {
+                while (extra[0] == ".." && base.length) {
+                    base.pop();
+                    extra.shift();
+                }
+                return [...base, ...extra];
+            },
+            []
+        );
+
+    return result.join("/");
+}
+
+
 async function addPackage(modulePath, scope, scopes, packages, toURL) {
     if (packages.has(modulePath)) return;
 
     packages.add(modulePath);
 
-
     const packageJSON = await loadPackageJSON(modulePath);
-    console.log(modulePath);
-    //const require = createRequire(modulePath);
 
-    //const [packageJSONPath, packageJSON] = await findPackageJSON(modulePath);
+    let packageBase = toURL(modulePath, packageJSON);
 
-    //const packagePath = dirname(packageJSONPath);
+    function parseExports(path, exports) {
+        if (!exports) return;
 
-    //    let moduleURL = pathToFileURL(modulePath);
+        if (typeof exports == "string") {
+            scope[urlPathJoin(packageJSON.name, path)] = urlPathJoin(packageBase, exports);
+        }
+
+        parseExports(path, ["import", "default"].map(key => exports[key]).find(Boolean));
+
+        for (let [exported, subExports] of Object.entries(exports)) {
+            if (exported.startsWith(".")) {
+                parseExports(exported, subExports);
+            }
+        }
+    }
+
+
 
     if (packageJSON.exports) {
-        for (let [exported, path] of Object.entries(packageJSON.exports)) {
-            scope[join(packageJSON.name, exported)] = toURL(resolve(modulePath, path)).toString();
-        }
+        parseExports(".", packageJSON.exports);
+    } else if (packageJSON.main) {
+        scope[packageJSON.name] = urlPathJoin(packageBase, packageJSON.main);
     } else {
-        scope[packageJSON.name] = toURL(join(modulePath, "index.js")).toString();
+        scope[packageJSON.name] = urlPathJoin(packageBase, "index.js");
     }
 
     for (let module in packageJSON.dependencies) {
         const [scopePath, dependencyPath] = await findModulePath(modulePath, module)
-        //const modulePath = require.resolve(module);
-        console.log(`${module} -> ${dependencyPath}`);
         const scope = scopes[toURL(scopePath + "/")] ||= {};
         await addPackage(dependencyPath, scope, scopes, packages, toURL);
     }
@@ -74,8 +96,6 @@ export default async function createImportMap(filename, toURL) {
     const imports = {};
     const scopes = {};
 
-    console.log("create import map", filename);
-
     let modulePath = await findPackage(filename);
 
     if (!modulePath) throw new Error(`Unable to find package.json for file: ${filename}`);
@@ -84,7 +104,7 @@ export default async function createImportMap(filename, toURL) {
 
     const importMap = {
         imports,
-        scopes//Object.fromEntries(Object.entries(scopes).filter(([, value]) => Object.keys(value).length)),
+        scopes
     }
 
     return JSON.stringify(importMap, null, 4);
