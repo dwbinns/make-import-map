@@ -1,0 +1,12 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "private": true,
+  "license": "ISC",
+  "dependencies": {
+    "which-export": "^1.0.0"
+  },
+  "scripts": {
+    "start": "make-import-map serve ."
+  }
+}
