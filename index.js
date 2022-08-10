@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { lstat, readFile } from "fs/promises";
-import { dirname, join } from "path";
+import { lstat, readFile } from "node:fs/promises";
+import { dirname, join, posix } from "node:path";
+
 
 async function findPackage(path) {
     const packageJSONPath = join(path, "package.json");
@@ -21,7 +22,7 @@ async function loadPackageJSON(modulePath) {
 async function findModulePath(path, moduleName) {
     let found = join(path, "node_modules", moduleName);
     if (await lstat(found).catch(e => false)) {
-        return [path, found];
+        return found;
     }
     if (dirname(path) != path) return await findModulePath(dirname(path), moduleName);
     throw new Error(`Unable to find module: ${moduleName}`);
@@ -29,78 +30,59 @@ async function findModulePath(path, moduleName) {
 
 
 
-function urlPathJoin(...args) {
-    let result = args
-        .map(arg => arg.split("/")/*.filter(component => component && component != '.')*/)
-        .reduce(
-            (base, extra) => {
-                while (extra[0] == ".." && base.length) {
-                    base.pop();
-                    extra.shift();
-                }
-                return [...base, ...extra];
-            },
-            []
-        );
-
-    return result.join("/");
-}
-
-
-async function addPackage(modulePath, scope, scopes, packages, toURL) {
-    if (packages.has(modulePath)) return;
-
-    packages.add(modulePath);
-
-    const packageJSON = await loadPackageJSON(modulePath);
-
-    let packageBase = toURL(modulePath, packageJSON);
-
-    function parseExports(path, exports) {
-        if (!exports) return;
-
-        if (typeof exports == "string") {
-            scope[urlPathJoin(packageJSON.name, path)] = urlPathJoin(packageBase, exports);
-        }
-
-        parseExports(path, ["import", "default"].map(key => exports[key]).find(Boolean));
-
-        for (let [exported, subExports] of Object.entries(exports)) {
-            if (exported.startsWith(".")) {
-                parseExports(exported, subExports);
-            }
-        }
-    }
-
-
-
-    if (packageJSON.exports) {
-        parseExports(".", packageJSON.exports);
-    } else if (packageJSON.main) {
-        scope[packageJSON.name] = urlPathJoin(packageBase, packageJSON.main);
-    } else {
-        scope[packageJSON.name] = urlPathJoin(packageBase, "index.js");
-    }
-
-    for (let module in packageJSON.dependencies) {
-        const [scopePath, dependencyPath] = await findModulePath(modulePath, module)
-        const scope = scopes[toURL(scopePath + "/")] ||= {};
-        await addPackage(dependencyPath, scope, scopes, packages, toURL);
-    }
-
-}
-
 
 export default async function createImportMap(filename, toURL) {
+
+    let packages = new Set();
+
+    async function addPackage(packagePath) {
+        if (packages.has(packagePath)) return;
+        packages.add(packagePath);
+
+        const scopePath = dirname(dirname(packagePath));
+        const scope = scopePath == rootModulePath ? imports : scopes[toURL(scopePath) + "/"] ||= {};
+
+        const packageJSON = await loadPackageJSON(packagePath);
+
+        function parseExports(path, exports) {
+            if (!exports) return;
+
+            if (typeof exports == "string") {
+                scope[posix.join(packageJSON.name, path)] = toURL(join(packagePath, exports));
+            }
+
+            parseExports(path, ["import", "default"].map(key => exports[key]).find(Boolean));
+
+            for (let [exported, subExports] of Object.entries(exports)) {
+                if (exported.startsWith(".")) {
+                    parseExports(posix.join(path, exported), subExports);
+                }
+            }
+        }
+
+        if (packageJSON.exports) {
+            parseExports(".", packageJSON.exports);
+        } else if (packageJSON.main) {
+            scope[packageJSON.name] = toURL(join(packagePath, packageJSON.main));
+        } else {
+            scope[packageJSON.name] = toURL(join(packagePath, "index.js"));
+        }
+
+
+        for (let module in packageJSON.dependencies) {
+            await addPackage(await findModulePath(packagePath, module));
+        }
+    }
+
 
     const imports = {};
     const scopes = {};
 
-    let modulePath = await findPackage(filename);
+    let rootModulePath = await findPackage(filename);
 
-    if (!modulePath) throw new Error(`Unable to find package.json for file: ${filename}`);
+    if (!rootModulePath) throw new Error(`Unable to find package.json for file: ${filename}`);
 
-    await addPackage(modulePath, imports, scopes, new Set(), toURL);
+    await addPackage(rootModulePath);
 
     const importMap = {
         imports,
@@ -109,3 +91,5 @@ export default async function createImportMap(filename, toURL) {
 
     return JSON.stringify(importMap, null, 4);
 }
+
+
