@@ -9,7 +9,7 @@
     "license": "MIT",
     "bin": "./cli.js",
     "dependencies": {
-        "fs-serve": "^2.0.1"
+        "fs-serve": "^3.0.0"
     },
     "type": "module"
 }

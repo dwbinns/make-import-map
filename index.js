@@ -22,7 +22,7 @@ async function loadPackageJSON(modulePath) {
 async function findModulePath(path, moduleName) {
     let found = join(path, "node_modules", moduleName);
     if (await lstat(found).catch(e => false)) {
-        return found;
+        return [path, found];
     }
     if (dirname(path) != path) return await findModulePath(dirname(path), moduleName);
     throw new Error(`Unable to find module: ${moduleName}`);
@@ -35,11 +35,10 @@ export default async function createImportMap(filename, toURL) {
 
     let packages = new Set();
 
-    async function addPackage(packagePath) {
+    async function addPackage(scopePath, packagePath) {
         if (packages.has(packagePath)) return;
         packages.add(packagePath);
 
-        const scopePath = dirname(dirname(packagePath));
         const scope = scopePath == rootModulePath ? imports : scopes[toURL(scopePath) + "/"] ||= {};
 
         const packageJSON = await loadPackageJSON(packagePath);
@@ -70,7 +69,7 @@ export default async function createImportMap(filename, toURL) {
 
 
         for (let module in packageJSON.dependencies) {
-            await addPackage(await findModulePath(packagePath, module));
+            await addPackage(...await findModulePath(packagePath, module));
         }
     }
 
@@ -82,7 +81,7 @@ export default async function createImportMap(filename, toURL) {
 
     if (!rootModulePath) throw new Error(`Unable to find package.json for file: ${filename}`);
 
-    await addPackage(rootModulePath);
+    await addPackage(rootModulePath, rootModulePath);
 
     const importMap = {
         imports,

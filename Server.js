@@ -11,7 +11,9 @@ export default class ImportServer extends Server {
             ssi: [
                 {
                     extension: "html",
-                    handlers: [async ({ filename }) => await this.createScriptImportMap(filename)],
+                    handlers: [async ({ command, filename }) =>
+                        command == "importmap"
+                        && await this.createScriptImportMap(filename)],
                 }
             ],
             maxAge: 2,
